@@ -102,7 +102,7 @@ I'm not interested in slapping a paywall on the core. I want to keep it Apache-2
 ### Where to sponsor
 
 - **GitHub Sponsors:** https://github.com/sponsors/bhkbdbhatt
-- **Repo & releases:** https://github.com/bhkbdbhatt/sailpoint-iam-plugins
+- **Repo & releases:** https://github.com/bhkbdbhatt/sentinel
 
 If you'd rather fund a **specific** item — say, "get the Azure Entra connector shipped" — reach out and we'll scope it together.
 
@@ -116,7 +116,7 @@ This part costs nothing and matters just as much:
 - 📣 **Share this post** with someone drowning in identity sprawl.
 - 🔐 **Security folks:** the disclosure process is in `SECURITY.md` — please don't open public issues for vulnerabilities.
 
-Contributing guide: [CONTRIBUTING.md](https://github.com/bhkbdbhatt/sailpoint-iam-plugins/blob/main/CONTRIBUTING.md).
+Contributing guide: [CONTRIBUTING.md](https://github.com/bhkbdbhatt/sentinel/blob/main/CONTRIBUTING.md).
 
 ## What you're really funding
 
