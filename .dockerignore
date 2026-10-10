@@ -1,0 +1,23 @@
+# Build artifacts
+bin/
+dist/
+
+# Local data and secrets (never bake into an image)
+data/
+.sentinel/
+*.key
+.env
+
+# VCS and tooling
+.git/
+.gitignore
+.github/
+.vscode/
+.idea/
+
+# Docs and meta (not needed to build the binary)
+*.md
+!README.md
+goreleaser*
+coverage.*
+Makefile

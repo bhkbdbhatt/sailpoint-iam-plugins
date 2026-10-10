@@ -1,0 +1,1237 @@
+openapi: 3.1.0
+info:
+  title: Sentinel API
+  version: 0.9.0-beta.1
+  description: |
+    Sentinel is an identity & access governance platform. This document
+    describes the stable `/v1` REST API.
+
+    ## Authentication
+    All `/v1` routes except `POST /v1/auth/login` require authentication, using
+    either a **Bearer JWT** (from login) or an **API key** (`X-API-Key`).
+
+    ## Stability
+    `/v1` is frozen for the beta. Additive changes are allowed; breaking changes
+    will be introduced under a new major path (`/v2`) with a deprecation window.
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+servers:
+  - url: http://localhost:8080
+    description: Local development
+tags:
+  - name: auth
+  - name: tenants
+  - name: users
+  - name: apikeys
+  - name: identities
+  - name: credentials
+  - name: grants
+  - name: resources
+  - name: connectors
+  - name: policies
+  - name: alerts
+  - name: stats
+  - name: system
+
+security:
+  - bearerAuth: []
+  - apiKeyAuth: []
+
+paths:
+  /healthz:
+    get:
+      tags: [system]
+      summary: Liveness probe
+      security: []
+      responses:
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+
+  /readyz:
+    get:
+      tags: [system]
+      summary: Readiness probe (checks the store)
+      security: []
+      responses:
+        "200":
+          description: Ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ready }
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /metrics:
+    get:
+      tags: [system]
+      summary: Prometheus metrics
+      security: []
+      responses:
+        "200":
+          description: Prometheus text exposition
+          content:
+            text/plain:
+              schema: { type: string }
+
+  /v1/auth/login:
+    post:
+      tags: [auth]
+      summary: Exchange credentials for a JWT
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 12 }
+      responses:
+        "200":
+          description: Authenticated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /v1/auth/me:
+    get:
+      tags: [auth]
+      summary: Current principal and effective permissions
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MeResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/tenants:
+    get:
+      tags: [tenants]
+      summary: List tenants
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Tenant list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Tenant" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [tenants]
+      summary: Create a tenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, slug]
+              properties:
+                name: { type: string }
+                slug: { type: string, pattern: "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Tenant" }
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /v1/tenants/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    get:
+      tags: [tenants]
+      summary: Get a tenant
+      responses:
+        "200":
+          description: Tenant
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Tenant" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/users:
+    get:
+      tags: [users]
+      summary: List users in the current tenant
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: role
+          in: query
+          schema: { $ref: "#/components/schemas/Role" }
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/Status" }
+        - name: q
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: User list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/User" }
+    post:
+      tags: [users]
+      summary: Create a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, name, password, role]
+              properties:
+                email: { type: string, format: email }
+                name: { type: string }
+                password: { type: string, minLength: 12 }
+                role: { $ref: "#/components/schemas/Role" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /v1/users/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    get:
+      tags: [users]
+      summary: Get a user
+      responses:
+        "200":
+          description: User
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [users]
+      summary: Update a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                role: { $ref: "#/components/schemas/Role" }
+                status: { $ref: "#/components/schemas/Status" }
+                password: { type: string, minLength: 12 }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [users]
+      summary: Delete a user
+      responses:
+        "204": { description: Deleted }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/apikeys:
+    get:
+      tags: [apikeys]
+      summary: List API keys in the current tenant
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: user_id
+          in: query
+          schema: { type: string }
+        - name: revoked
+          in: query
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: API key list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/APIKey" }
+    post:
+      tags: [apikeys]
+      summary: Create an API key
+      description: The plaintext key is returned only once, in the response.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                role: { $ref: "#/components/schemas/Role" }
+                expires_at: { type: [string, "null"], format: date-time }
+      responses:
+        "201":
+          description: Created (includes the plaintext key)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/APIKeyCreated" }
+
+  /v1/apikeys/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    delete:
+      tags: [apikeys]
+      summary: Revoke an API key
+      responses:
+        "204": { description: Revoked }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/identities:
+    get:
+      tags: [identities]
+      summary: List identities
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: types
+          in: query
+          description: Comma-separated identity type filter.
+          schema: { type: string, example: "human,workload" }
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/Status" }
+        - name: owner_id
+          in: query
+          schema: { type: string }
+        - name: source_system
+          in: query
+          schema: { type: string }
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: min_risk
+          in: query
+          schema: { type: integer, minimum: 0, maximum: 100 }
+        - name: max_risk
+          in: query
+          schema: { type: integer, minimum: 0, maximum: 100 }
+      responses:
+        "200":
+          description: Identity list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Identity" }
+    post:
+      tags: [identities]
+      summary: Create an identity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IdentityInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Identity" }
+        "400":
+          $ref: "#/components/responses/ValidationError"
+
+  /v1/identities/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    get:
+      tags: [identities]
+      summary: Get an identity
+      responses:
+        "200":
+          description: Identity
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Identity" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [identities]
+      summary: Update an identity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IdentityInput" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Identity" }
+    delete:
+      tags: [identities]
+      summary: Delete an identity
+      responses:
+        "204": { description: Deleted }
+
+  /v1/credentials:
+    get:
+      tags: [credentials]
+      summary: List credentials
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: identity_id
+          in: query
+          schema: { type: string }
+        - name: types
+          in: query
+          description: Comma-separated credential type filter.
+          schema: { type: string }
+        - name: source_system
+          in: query
+          schema: { type: string }
+        - name: expiring_within_days
+          in: query
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Credential list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Credential" }
+
+  /v1/credentials/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    get:
+      tags: [credentials]
+      summary: Get a credential
+      responses:
+        "200":
+          description: Credential
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Credential" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/grants:
+    get:
+      tags: [grants]
+      summary: List access grants
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: identity_id
+          in: query
+          schema: { type: string }
+        - name: resource_id
+          in: query
+          schema: { type: string }
+        - name: source_system
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Grant list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/AccessGrant" }
+
+  /v1/grants/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    get:
+      tags: [grants]
+      summary: Get an access grant
+      responses:
+        "200":
+          description: Grant
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccessGrant" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/resources:
+    get:
+      tags: [resources]
+      summary: List resources
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: type
+          in: query
+          schema: { $ref: "#/components/schemas/ResourceType" }
+        - name: source_system
+          in: query
+          schema: { type: string }
+        - name: q
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Resource list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Resource" }
+
+  /v1/resources/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    get:
+      tags: [resources]
+      summary: Get a resource
+      responses:
+        "200":
+          description: Resource
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Resource" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/connectors:
+    get:
+      tags: [connectors]
+      summary: List connector configurations
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: key
+          in: query
+          schema: { $ref: "#/components/schemas/ConnectorKey" }
+        - name: enabled
+          in: query
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: Connector list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/ConnectorConfig" }
+    post:
+      tags: [connectors]
+      summary: Create a connector configuration
+      description: |
+        Secret values sent in `secrets` are encrypted at rest (AES-256-GCM) and
+        are never returned by the API.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConnectorConfigInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConnectorConfig" }
+        "400":
+          $ref: "#/components/responses/ValidationError"
+
+  /v1/connectors/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    get:
+      tags: [connectors]
+      summary: Get a connector configuration
+      responses:
+        "200":
+          description: Connector
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConnectorConfig" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [connectors]
+      summary: Update a connector configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConnectorConfigInput" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConnectorConfig" }
+    delete:
+      tags: [connectors]
+      summary: Delete a connector configuration
+      responses:
+        "204": { description: Deleted }
+
+  /v1/connectors/{id}/run:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    post:
+      tags: [connectors]
+      summary: Run a connector once
+      responses:
+        "200":
+          description: Run result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConnectorRun" }
+
+  /v1/connectors/{id}/runs:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    get:
+      tags: [connectors]
+      summary: List runs for a connector
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: status
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Run list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/ConnectorRun" }
+
+  /v1/policies:
+    get:
+      tags: [policies]
+      summary: List policies
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: intent_level
+          in: query
+          schema: { type: string, enum: [org, role, developer, runtime] }
+        - name: status
+          in: query
+          schema: { type: string, enum: [draft, active, disabled, simulation] }
+        - name: engine
+          in: query
+          schema: { type: string }
+        - name: q
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Policy list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Policy" }
+    post:
+      tags: [policies]
+      summary: Create a policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PolicyInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Policy" }
+
+  /v1/policies/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    get:
+      tags: [policies]
+      summary: Get a policy
+      responses:
+        "200":
+          description: Policy
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Policy" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [policies]
+      summary: Update a policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PolicyInput" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Policy" }
+    delete:
+      tags: [policies]
+      summary: Delete a policy
+      responses:
+        "204": { description: Deleted }
+
+  /v1/alerts:
+    get:
+      tags: [alerts]
+      summary: List alerts
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: identity_id
+          in: query
+          schema: { type: string }
+        - name: type
+          in: query
+          schema: { type: string }
+        - name: severity
+          in: query
+          schema: { type: string, enum: [info, low, medium, high, critical] }
+        - name: status
+          in: query
+          schema: { type: string, enum: [open, acknowledged, resolved] }
+      responses:
+        "200":
+          description: Alert list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Alert" }
+    post:
+      tags: [alerts]
+      summary: Create an alert
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AlertInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Alert" }
+
+  /v1/alerts/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    get:
+      tags: [alerts]
+      summary: Get an alert
+      responses:
+        "200":
+          description: Alert
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Alert" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [alerts]
+      summary: Update an alert's status or description
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { type: string, enum: [open, acknowledged, resolved] }
+                description: { type: string }
+                recommended_action: { type: string }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Alert" }
+    delete:
+      tags: [alerts]
+      summary: Delete an alert
+      responses:
+        "204": { description: Deleted }
+
+  /v1/stats/overview:
+    get:
+      tags: [stats]
+      summary: Governance overview for the current tenant
+      responses:
+        "200":
+          description: Overview
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Overview" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  parameters:
+    PathID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 0, maximum: 1000 }
+    Offset:
+      name: offset
+      in: query
+      schema: { type: integer, minimum: 0 }
+
+  responses:
+    Unauthorized:
+      description: Authentication required or invalid
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Forbidden:
+      description: Authenticated but missing permission
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Conflict:
+      description: Resource already exists
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    ValidationError:
+      description: Invalid input
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    RateLimited:
+      description: Too many requests
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Unavailable:
+      description: Service not ready
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  schemas:
+    Page:
+      type: object
+      properties:
+        total: { type: integer }
+        limit: { type: integer }
+        offset: { type: integer }
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            fields:
+              type: array
+              items:
+                type: object
+                properties:
+                  field: { type: string }
+                  reason: { type: string }
+    Role:
+      type: string
+      enum: [owner, admin, analyst, viewer]
+    Status:
+      type: string
+      enum: [active, disabled, orphaned, revoked, expired, invited]
+    IdentityType:
+      type: string
+      enum: [human, workload, service_account, api_key, oauth_token, ai_agent, mcp_server, device, certificate, team]
+    CredentialType:
+      type: string
+      enum: [password, api_key, access_key, oauth_token, certificate, service_account_key, ssh_key, federated]
+    ResourceType:
+      type: string
+      enum: [cloud_role, iam_policy, application, database, api, bucket, secret, resource]
+    ConnectorKey:
+      type: string
+      enum: [aws_iam, azure_entra, simulated]
+    SystemRef:
+      type: object
+      properties:
+        source_system: { type: string }
+        external_id: { type: string }
+    Tenant:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        slug: { type: string }
+        status: { $ref: "#/components/schemas/Status" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        tenant_id: { type: string }
+        email: { type: string, format: email }
+        name: { type: string }
+        role: { $ref: "#/components/schemas/Role" }
+        status: { $ref: "#/components/schemas/Status" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        last_login_at: { type: [string, "null"], format: date-time }
+    APIKey:
+      type: object
+      properties:
+        id: { type: string }
+        tenant_id: { type: string }
+        user_id: { type: string }
+        name: { type: string }
+        prefix: { type: string }
+        role: { $ref: "#/components/schemas/Role" }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: [string, "null"], format: date-time }
+        last_used_at: { type: [string, "null"], format: date-time }
+        revoked: { type: boolean }
+    APIKeyCreated:
+      allOf:
+        - $ref: "#/components/schemas/APIKey"
+        - type: object
+          properties:
+            key:
+              type: string
+              description: Plaintext API key, returned only on creation.
+    Identity:
+      type: object
+      properties:
+        id: { type: string }
+        tenant_id: { type: string }
+        type: { $ref: "#/components/schemas/IdentityType" }
+        name: { type: string }
+        display_name: { type: string }
+        owner_id: { type: string }
+        environment: { type: string }
+        cloud_provider: { type: string }
+        source_system: { type: string }
+        external_id: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        last_used_at: { type: [string, "null"], format: date-time }
+        risk_score: { type: integer, minimum: 0, maximum: 100 }
+        status: { $ref: "#/components/schemas/Status" }
+        attributes:
+          type: object
+          additionalProperties: { type: string }
+    IdentityInput:
+      type: object
+      required: [type, name, source_system]
+      properties:
+        type: { $ref: "#/components/schemas/IdentityType" }
+        name: { type: string }
+        display_name: { type: string }
+        owner_id: { type: string }
+        environment: { type: string }
+        cloud_provider: { type: string }
+        source_system: { type: string }
+        external_id: { type: string }
+        risk_score: { type: integer, minimum: 0, maximum: 100 }
+        status: { $ref: "#/components/schemas/Status" }
+        attributes:
+          type: object
+          additionalProperties: { type: string }
+    Credential:
+      type: object
+      properties:
+        id: { type: string }
+        tenant_id: { type: string }
+        identity_id: { type: string }
+        type: { $ref: "#/components/schemas/CredentialType" }
+        name: { type: string }
+        scope: { type: string }
+        issued_at: { type: [string, "null"], format: date-time }
+        expires_at: { type: [string, "null"], format: date-time }
+        rotation_schedule: { type: string }
+        source_system: { type: string }
+        external_id: { type: string }
+        is_ephemeral: { type: boolean }
+        status: { $ref: "#/components/schemas/Status" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    Resource:
+      type: object
+      properties:
+        id: { type: string }
+        tenant_id: { type: string }
+        name: { type: string }
+        type: { $ref: "#/components/schemas/ResourceType" }
+        environment: { type: string }
+        source_system: { type: string }
+        external_id: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    AccessGrant:
+      type: object
+      properties:
+        id: { type: string }
+        tenant_id: { type: string }
+        identity_id: { type: string }
+        resource_id: { type: string }
+        entitlement: { type: string }
+        granted_at: { type: [string, "null"], format: date-time }
+        granted_by: { type: string }
+        policy_id: { type: string }
+        usage_count_30d: { type: integer }
+        last_used_at: { type: [string, "null"], format: date-time }
+        source_system: { type: string }
+        external_id: { type: string }
+    Policy:
+      type: object
+      properties:
+        id: { type: string }
+        tenant_id: { type: string }
+        name: { type: string }
+        scope: { type: string }
+        rules: { type: string }
+        engine: { type: string }
+        intent_level: { type: string, enum: [org, role, developer, runtime] }
+        effective_date: { type: [string, "null"], format: date-time }
+        status: { type: string, enum: [draft, active, disabled, simulation] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    PolicyInput:
+      type: object
+      required: [name, rules, engine, intent_level]
+      properties:
+        name: { type: string }
+        scope: { type: string }
+        rules: { type: string }
+        engine: { type: string }
+        intent_level: { type: string, enum: [org, role, developer, runtime] }
+        effective_date: { type: [string, "null"], format: date-time }
+        status: { type: string, enum: [draft, active, disabled, simulation] }
+    Alert:
+      type: object
+      properties:
+        id: { type: string }
+        tenant_id: { type: string }
+        identity_id: { type: string }
+        type: { type: string }
+        severity: { type: string, enum: [info, low, medium, high, critical] }
+        detected_at: { type: string, format: date-time }
+        description: { type: string }
+        recommended_action: { type: string }
+        status: { type: string, enum: [open, acknowledged, resolved] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    AlertInput:
+      type: object
+      required: [type, severity, description]
+      properties:
+        identity_id: { type: string }
+        type: { type: string }
+        severity: { type: string, enum: [info, low, medium, high, critical] }
+        description: { type: string }
+        recommended_action: { type: string }
+        status: { type: string, enum: [open, acknowledged, resolved] }
+    ConnectorConfig:
+      type: object
+      properties:
+        id: { type: string }
+        tenant_id: { type: string }
+        key: { $ref: "#/components/schemas/ConnectorKey" }
+        name: { type: string }
+        enabled: { type: boolean }
+        interval_minutes: { type: integer }
+        options:
+          type: object
+          additionalProperties: { type: string }
+        last_run_at: { type: [string, "null"], format: date-time }
+        last_status: { type: string, enum: [idle, running, succeeded, failed] }
+        last_error: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ConnectorConfigInput:
+      type: object
+      required: [key, name]
+      properties:
+        key: { $ref: "#/components/schemas/ConnectorKey" }
+        name: { type: string }
+        enabled: { type: boolean }
+        interval_minutes: { type: integer, minimum: 0, maximum: 10080 }
+        secrets:
+          type: object
+          additionalProperties: { type: string }
+          description: Encrypted at rest; never returned.
+        options:
+          type: object
+          additionalProperties: { type: string }
+    ConnectorRun:
+      type: object
+      properties:
+        id: { type: string }
+        tenant_id: { type: string }
+        connector_config_id: { type: string }
+        connector_key: { $ref: "#/components/schemas/ConnectorKey" }
+        trigger: { type: string }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: [string, "null"], format: date-time }
+        status: { type: string, enum: [idle, running, succeeded, failed] }
+        identities_found: { type: integer }
+        credentials_found: { type: integer }
+        grants_found: { type: integer }
+        resources_found: { type: integer }
+        error: { type: string }
+    Overview:
+      type: object
+      properties:
+        total_identities: { type: integer }
+        identities_by_type:
+          type: object
+          additionalProperties: { type: integer }
+        identities_by_status:
+          type: object
+          additionalProperties: { type: integer }
+        risk_buckets:
+          type: object
+          additionalProperties: { type: integer }
+        total_credentials: { type: integer }
+        credentials_expiring_30d: { type: integer }
+        total_grants: { type: integer }
+        total_resources: { type: integer }
+        unowned_identities: { type: integer }
+        owner_coverage_pct: { type: number }
+        last_connector_run_at: { type: [string, "null"], format: date-time }
+    LoginResponse:
+      type: object
+      properties:
+        token: { type: string }
+        expires_at: { type: string, format: date-time }
+        user: { $ref: "#/components/schemas/User" }
+    MeResponse:
+      type: object
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+        permissions:
+          type: array
+          items: { type: string }

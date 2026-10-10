@@ -1,0 +1,27 @@
+services:
+  sentinel:
+    build:
+      context: .
+    image: sentinel:dev
+    container_name: sentinel
+    ports:
+      - "8080:8080"
+    environment:
+      SENTINEL_HTTP_ADDR: ":8080"
+      SENTINEL_DATA_DIR: "/data"
+      SENTINEL_STORE: "file"
+      SENTINEL_LOG_LEVEL: "info"
+      SENTINEL_SCHEDULER_ENABLED: "true"
+      SENTINEL_SCHEDULER_INTERVAL: "5m"
+      # Bootstrap the first tenant/owner on start (change before real use):
+      SENTINEL_BOOTSTRAP_TENANT: "Acme"
+      SENTINEL_BOOTSTRAP_SLUG: "acme"
+      SENTINEL_BOOTSTRAP_EMAIL: "owner@example.com"
+      SENTINEL_BOOTSTRAP_NAME: "Owner"
+      SENTINEL_BOOTSTRAP_PASSWORD: "supersecret123"
+    volumes:
+      - sentinel-data:/data
+    restart: unless-stopped
+
+volumes:
+  sentinel-data:
